@@ -1,0 +1,84 @@
+package lipid
+
+unit LipidScoreUnit
+import lipid.LipidClassRank;
+
+dialect "mvel"
+
+function Integer lipidTypeRank(String lipidType) {
+    return LipidClassRank.getRankForType(lipidType);
+}
+
+// ------------------------
+// REGLAS POSITIVAS (score +1)
+// ------------------------
+
+// 1. Más carbonos → mayor RT (si tipo y DB iguales)
+rule "Positive score: more carbons, higher RT"
+when
+    $a1 : /annotations[$type : lipidType, $db : doubleBondCount, $carb1 : carbonCount, $rt1 : rtMin]
+    $a2 : /annotations[this != $a1, lipidType == $type, doubleBondCount == $db,
+                       carbonCount > $carb1, rtMin > $rt1]
+then
+    $a1.addScore(1);
+    $a2.addScore(1);
+end
+
+// 2. Más dobles enlaces → menor RT (si tipo y carbonos iguales)
+rule "Positive score: more double bonds, lower RT"
+when
+    $a1 : /annotations[$type : lipidType, $carb : carbonCount, $db1 : doubleBondCount, $rt1 : rtMin]
+    $a2 : /annotations[this != $a1, lipidType == $type, carbonCount == $carb,
+                       doubleBondCount > $db1, rtMin < $rt1]
+then
+    $a1.addScore(1);
+    $a2.addScore(1);
+end
+
+// 3. Clases lipídicas en orden esperado (PG < PE < PI < PA < PS < PC)
+rule "Positive score: correct lipid class elution order"
+when
+    $a1 : /annotations[$db : doubleBondCount, $carb : carbonCount, $type1 : lipidType, $rt1 : rtMin]
+    $a2 : /annotations[this != $a1, doubleBondCount == $db, carbonCount == $carb,
+                       lipidTypeRank(lipidType) > lipidTypeRank($type1), rtMin > $rt1]
+then
+    $a1.addScore(1);
+    $a2.addScore(1);
+end
+
+// ------------------------
+// REGLAS NEGATIVAS (score -1)
+// ------------------------
+
+// 4. Más carbonos pero menor RT (inverso a esperado)
+rule "Negative score: more carbons, lower RT"
+when
+    $a1 : /annotations[$type : lipidType, $db : doubleBondCount, $carb1 : carbonCount, $rt1 : rtMin]
+    $a2 : /annotations[this != $a1, lipidType == $type, doubleBondCount == $db,
+                       carbonCount > $carb1, rtMin < $rt1]
+then
+    $a1.addScore(-1);
+    $a2.addScore(-1);
+end
+
+// 5. Más dobles enlaces pero mayor RT (inverso a esperado)
+rule "Negative score: more double bonds, higher RT"
+when
+    $a1 : /annotations[$type : lipidType, $carb : carbonCount, $db1 : doubleBondCount, $rt1 : rtMin]
+    $a2 : /annotations[this != $a1, lipidType == $type, carbonCount == $carb,
+                       doubleBondCount > $db1, rtMin > $rt1]
+then
+    $a1.addScore(-1);
+    $a2.addScore(-1);
+end
+
+// 6. Clases lipídicas en orden invertido
+rule "Negative score: wrong lipid class elution order"
+when
+    $a1 : /annotations[$db : doubleBondCount, $carb : carbonCount, $type1 : lipidType, $rt1 : rtMin]
+    $a2 : /annotations[this != $a1, doubleBondCount == $db, carbonCount == $carb,
+                       lipidTypeRank(lipidType) > lipidTypeRank($type1), rtMin < $rt1]
+then
+    $a1.addScore(-1);
+    $a2.addScore(-1);
+end
